@@ -1,0 +1,100 @@
+name: Windows build and release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { throw 'pip upgrade failed' }
+          python -m pip install -r requirements-dev.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
+          python -m pip install --no-deps -e .
+          if ($LASTEXITCODE -ne 0) { throw 'Project installation failed' }
+      - name: Unit tests
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+      - name: GUI smoke test
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python scripts/smoke_gui.py
+          if ($LASTEXITCODE -ne 0) { throw 'GUI smoke test failed' }
+      - name: Find installer compiler
+        shell: pwsh
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $compiler)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
+          }
+      - name: Build installer and portable archive
+        shell: pwsh
+        run: ./scripts/build_windows.ps1 -SkipInstall
+      - name: Upload Windows downloads
+        uses: actions/upload-artifact@v4
+        with:
+          name: TreeSizeExplorer-Windows-${{ github.run_number }}
+          path: dist/release/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish a new version once
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = python -c "import ast,pathlib; t=ast.parse(pathlib.Path('src/treesize/__init__.py').read_text(encoding='utf-8')); print(next(ast.literal_eval(n.value) for n in t.body if isinstance(n,ast.Assign) and any(isinstance(x,ast.Name) and x.id=='VERSION' for x in n.targets)))"
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid VERSION' }
+          $tag = "v$version"
+          # List refs once: unlike a failed GET, a network/auth error cannot be mistaken for a missing tag.
+          $tags = gh api "repos/$env:GH_REPO/git/matching-refs/tags/" --jq '.[].ref'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not inspect existing tags' }
+          if (@($tags) -contains "refs/tags/$tag") {
+            Write-Host "$tag already exists; existing release assets are left unchanged."
+            exit 0
+          }
+          $notes = @"
+          Windows 10/11 x64 disk-space analyzer.
+
+          Download TreeSizeExplorer-Setup-$version.exe to install or update.
+          A portable ZIP and SHA256SUMS.txt are also included.
+
+          Update checks run at launch and every four hours while the app is open.
+          Private repositories require a GitHub token with Contents read permission in app Settings.
+          "@
+          $notesPath = Join-Path $env:RUNNER_TEMP 'treesize-release-notes.md'
+          [IO.File]::WriteAllText($notesPath, $notes, [Text.UTF8Encoding]::new($false))
+          $assets = @(Get-ChildItem dist/release -File | ForEach-Object { $_.FullName })
+          gh release create $tag --target $env:GITHUB_SHA --title "TreeSize Explorer $version" --notes-file $notesPath @assets
+          if ($LASTEXITCODE -ne 0) { throw 'Release creation failed; existing assets were not overwritten' }
