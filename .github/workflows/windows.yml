@@ -77,6 +77,12 @@ jobs:
           $version = python -c "import ast,pathlib; t=ast.parse(pathlib.Path('src/treesize/__init__.py').read_text(encoding='utf-8')); print(next(ast.literal_eval(n.value) for n in t.body if isinstance(n,ast.Assign) and any(isinstance(x,ast.Name) and x.id=='VERSION' for x in n.targets)))"
           if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid VERSION' }
           $tag = "v$version"
+          $head = gh api "repos/$env:GH_REPO/commits/main" --jq '.sha'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not inspect current main commit' }
+          if ($head -ne $env:GITHUB_SHA) {
+            Write-Host 'A newer main commit exists; only its build may publish a release.'
+            exit 0
+          }
           # List refs once: unlike a failed GET, a network/auth error cannot be mistaken for a missing tag.
           $tags = gh api "repos/$env:GH_REPO/git/matching-refs/tags/" --jq '.[].ref'
           if ($LASTEXITCODE -ne 0) { throw 'Could not inspect existing tags' }

@@ -2,7 +2,7 @@
 
 ## 사용자가 설치하는 방법
 
-1. 저장소의 **Releases**에서 `TreeSizeExplorer-Setup-1.0.1.exe`처럼 현재 버전의 설치 파일을 받습니다.
+1. 저장소의 **Releases**에서 `TreeSizeExplorer-Setup-1.0.2.exe`처럼 현재 버전의 설치 파일을 받습니다.
 2. 설치 마법사를 실행합니다. 현재 Windows 사용자에게 설치하므로 일반적으로 관리자 권한이 필요하지 않습니다.
 3. 프로그램의 설정에서 업데이트 저장소를 확인합니다. 기본값은 `mycodehive/TreeSize`입니다.
 
@@ -49,9 +49,9 @@ Remove-Item Env:QT_QPA_PLATFORM
 
 ## GitHub Actions 자동 릴리스
 
-`main`에 푸시하면 Windows 테스트, GUI 스모크 테스트, EXE 및 ZIP 빌드가 실행됩니다. 테스트가 실패하면 릴리스를 게시하지 않습니다. 각 빌드 결과는 Actions의 아티팩트로도 30일간 제공됩니다.
+`main`에 푸시하면 Windows 테스트, GUI 스모크 테스트, EXE 및 ZIP 빌드가 실행됩니다. 패키징한 EXE도 `--self-test`로 직접 실행해 화면·분석·정렬·Windows 자격 증명 모듈을 검사합니다. GitHub Actions에서는 설치 파일의 무인 설치·재설치와 설치된 앱의 자체 검사까지 수행합니다. 테스트가 실패하면 릴리스를 게시하지 않습니다. 각 빌드 결과는 Actions의 아티팩트로도 30일간 제공됩니다.
 
-`src/treesize/__init__.py`의 `VERSION = "1.0.1"` 값을 읽어 `v1.0.1` 태그가 없을 때 해당 커밋의 새 릴리스를 자동으로 게시합니다. 기존 태그가 있으면 해당 버전의 자산을 덮어쓰지 않습니다. 다음 버전을 배포하려면 기능 수정과 함께 `VERSION`을 `1.0.1`처럼 올려 `main`에 푸시합니다. 수동 **Run workflow**도 지원하지만 릴리스 게시는 `main`에서만 실행합니다.
+`src/treesize/__init__.py`의 `VERSION = "1.0.2"` 값을 읽어 `v1.0.2` 태그가 없을 때 해당 커밋의 새 릴리스를 자동으로 게시합니다. 기존 태그가 있으면 해당 버전의 자산을 덮어쓰지 않습니다. 다음 버전을 배포하려면 기능 수정과 함께 `VERSION`을 `1.0.2`처럼 올려 `main`에 푸시합니다. 수동 **Run workflow**도 지원하지만 릴리스 게시는 `main`에서만 실행합니다.
 
 Actions에는 저장소의 `contents: write` 권한이 필요합니다. 워크플로의 기본 `GITHUB_TOKEN`을 사용하므로 별도 배포용 토큰은 필요하지 않습니다. 저장소 또는 조직 정책으로 Actions가 비활성화되어 있으면 먼저 허용해야 합니다.
 

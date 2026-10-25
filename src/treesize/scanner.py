@@ -46,14 +46,45 @@ class ScanResult:
 _MAX_ERRORS = 1000
 _REPARSE_POINT = 0x400
 _CLOUD_ATTRIBUTES = 0x1000 | 0x40000 | 0x400000
+_COMPRESSED_OR_SPARSE = 0x800 | 0x200
+_INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 _get_compressed_size = None
+_create_file = None
+_get_file_info = None
+_close_handle = None
+# Fixed-width fields are required: BOOLEAN is one byte, unlike Win32 BOOL.
+class _FileStandardInfo(ctypes.Structure):
+    _fields_ = [
+        ("AllocationSize", ctypes.c_int64),
+        ("EndOfFile", ctypes.c_int64),
+        ("NumberOfLinks", ctypes.c_uint32),
+        ("DeletePending", ctypes.c_ubyte),
+        ("Directory", ctypes.c_ubyte),
+    ]
+
+
+_set_last_error = getattr(ctypes, "set_last_error", lambda _error: None)
+_get_last_error = getattr(ctypes, "get_last_error", lambda: 0)
+_format_error = getattr(ctypes, "FormatError", lambda error: f"Windows error {error}")
 if os.name == "nt":
     from ctypes import wintypes
 
     _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     _get_compressed_size = _kernel32.GetCompressedFileSizeW
-    _get_compressed_size.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(wintypes.DWORD)]
-    _get_compressed_size.restype = wintypes.DWORD
+    _get_compressed_size.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_uint32)]
+    _get_compressed_size.restype = ctypes.c_uint32
+    _create_file = _kernel32.CreateFileW
+    _create_file.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+        wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+    ]
+    _create_file.restype = wintypes.HANDLE
+    _get_file_info = _kernel32.GetFileInformationByHandleEx
+    _get_file_info.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    _get_file_info.restype = wintypes.BOOL
+    _close_handle = _kernel32.CloseHandle
+    _close_handle.argtypes = [wintypes.HANDLE]
+    _close_handle.restype = wintypes.BOOL
 
 
 def _native_path(path: str) -> str:
@@ -65,14 +96,33 @@ def _native_path(path: str) -> str:
 
 
 def _allocated_bytes(path: str, metadata: os.stat_result) -> int:
-    if _get_compressed_size is not None:
-        high = wintypes.DWORD()
-        ctypes.set_last_error(0)
-        low = _get_compressed_size(_native_path(path), ctypes.byref(high))
-        error = ctypes.get_last_error()
-        if low == 0xFFFFFFFF and error:
-            raise OSError(error, ctypes.FormatError(error), path)
-        return (high.value << 32) | low
+    if _create_file is not None:
+        attributes = getattr(metadata, "st_file_attributes", 0)
+        if attributes & _COMPRESSED_OR_SPARSE:
+            # This API reports storage use for compressed/sparse files, but
+            # returns logical length for ordinary files. Do not use it there.
+            high = ctypes.c_uint32()
+            _set_last_error(0)
+            low = _get_compressed_size(_native_path(path), ctypes.byref(high))
+            error = _get_last_error()
+            if low == 0xFFFFFFFF and error:
+                raise OSError(error, _format_error(error), path)
+            return (high.value << 32) | low
+        # Metadata-only open, sharing with readers/writers/deleters. Opening the
+        # reparse point itself prevents following a link substituted mid-scan.
+        handle = _create_file(_native_path(path), 0, 0x1 | 0x2 | 0x4,
+                              None, 3, 0x00200000, None)
+        if handle is None or handle == 0 or handle == _INVALID_HANDLE_VALUE:
+            error = _get_last_error()
+            raise OSError(error, _format_error(error), path)
+        try:
+            info = _FileStandardInfo()
+            if not _get_file_info(handle, 1, ctypes.byref(info), ctypes.sizeof(info)):
+                error = _get_last_error()
+                raise OSError(error, _format_error(error), path)
+            return info.AllocationSize
+        finally:
+            _close_handle(handle)
     return getattr(metadata, "st_blocks", (metadata.st_size + 511) // 512) * 512
 
 

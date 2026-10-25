@@ -8,8 +8,8 @@ TreeSize의 공개 기능을 참고해 새로 작성한 독립 프로그램이�
 
 **[최신 Windows 설치 파일과 휴대용 ZIP](https://github.com/mycodehive/TreeSize/releases/latest)**
 
-- 설치: `TreeSizeExplorer-Setup-1.0.1.exe` 실행. Python을 별도로 설치할 필요가 없습니다.
-- 휴대용: `TreeSizeExplorer-Portable-1.0.1-win-x64.zip` 전체를 압축 해제하고 폴더 안의 `TreeSizeExplorer.exe` 실행.
+- 설치: `TreeSizeExplorer-Setup-1.0.2.exe` 실행. Python을 별도로 설치할 필요가 없습니다.
+- 휴대용: `TreeSizeExplorer-Portable-1.0.2-win-x64.zip` 전체를 압축 해제하고 폴더 안의 `TreeSizeExplorer.exe` 실행.
 - 저장소가 비공개인 경우 GitHub 계정에 로그인해야 다운로드할 수 있습니다.
 - 첫 소스 반영 후 **[Actions](https://github.com/mycodehive/TreeSize/actions)** 빌드가 성공해야 Releases에 설치 파일이 나타납니다.
 
@@ -47,7 +47,7 @@ TreeSize의 공개 기능을 참고해 새로 작성한 독립 프로그램이�
 ## 정확도와 개인정보
 
 - 파일 내용 대신 디렉터리 메타데이터만 읽습니다. 분석 결과와 경로를 외부 서버로 전송하지 않습니다. 네트워크 통신은 설정한 GitHub 저장소의 업데이트 조회와 다운로드에 사용합니다.
-- 파일 크기는 논리 크기입니다. 디스크 할당은 Windows `GetCompressedFileSizeW`로 구하며 디렉터리 자체 메타데이터는 제외합니다. 조회 실패 시 논리 크기로 대체하고 접근 오류를 표시합니다.
+- 파일 크기는 논리 크기입니다. 디스크 할당은 일반 파일에서 Windows `GetFileInformationByHandleEx(FileStandardInfo)`로, 압축·희소 파일에서 `GetCompressedFileSizeW`로 조회합니다. 디렉터리 자체 메타데이터는 제외합니다. 조회 실패 시 논리 크기로 대체하고 접근 오류를 표시합니다.
 - 하드 링크는 각 경로에서 계산하므로 드라이브 실제 사용량과 합계가 다를 수 있습니다. 파일시스템 메타데이터, 휴지통 접근 권한, 압축·희소 파일, 분석 중 변경도 차이를 만들 수 있습니다.
 - 링크·재분석 지점·온라인 전용 파일은 건너뜁니다. 접근이 제한된 시스템 폴더는 오류 목록에 표시합니다. 오류 상세는 1,000건으로 제한합니다.
 - 전체 폴더 트리는 메모리에 보관합니다. 수백만 항목의 디스크는 메모리를 많이 사용할 수 있습니다. NTFS MFT를 직접 읽는 상용 도구와 처리 속도가 같다고 보장하지 않습니다.
@@ -75,7 +75,7 @@ python scripts/smoke_gui.py
 
 ## 빌드와 배포
 
-`main` 반영 시 GitHub Actions가 Windows 테스트 → GUI 검사 → PyInstaller → Inno Setup → 릴리스 게시를 수행합니다. 새 버전은 `src/treesize/__init__.py`의 `VERSION`을 올려 배포합니다. 기존 버전의 릴리스 파일은 덮어쓰지 않습니다.
+`main` 반영 시 GitHub Actions가 Windows 테스트 → GUI 검사 → PyInstaller → 배포 실행 파일 자체 검사 → Inno Setup 설치·재설치 검사 → 릴리스 게시를 수행합니다. 새 버전은 `src/treesize/__init__.py`의 `VERSION`을 올려 배포합니다. 기존 버전의 릴리스 파일은 덮어쓰지 않습니다.
 
 자세한 빌드·배포 절차와 비공개 저장소 설정은 **[배포 가이드](docs/RELEASING.md)**를 확인하세요. 설치 파일은 코드 서명되지 않았으며 Windows가 게시자 확인 알림을 표시할 수 있습니다.
 

@@ -24,14 +24,14 @@ def main():
         root = Path(temporary)
         (root / "Documents").mkdir(); (root / "Video").mkdir()
         (root / "Documents" / "report.txt").write_bytes(b"x" * 2048)
-        (root / "Video" / "sample.mp4").write_bytes(b"x" * 8192)
+        (root / "Video" / "sample.mp4").write_bytes(b"x" * 12288)
         window.start_scan(str(root))
         deadline = time.monotonic() + 15
         while (window.scan_task is not None or window.jobs) and time.monotonic() < deadline:
             app.processEvents(); QTest.qWait(10)
         assert not window.jobs, "Worker did not finish"
         assert window.result is not None, "Scan produced no result"
-        assert window.result.root.size == 10240
+        assert window.result.root.size == 14336
         assert window.result.root.files == 2
         assert window.large_table.rowCount() == 2
         assert window.extension_table.rowCount() == 2

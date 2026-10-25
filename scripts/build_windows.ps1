@@ -28,6 +28,23 @@ try {
     python -m PyInstaller --noconfirm --clean --onedir --windowed --name TreeSizeExplorer --paths src --icon build/app.ico --collect-submodules keyring.backends --add-data "build/app.ico;." packaging/launcher.py
     if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed.' }
 
+    # Launch the frozen executable: imports, worker scan, numeric sorting and
+    # the Windows credential backend must work before we publish any download.
+    $oldQtPlatform = $env:QT_QPA_PLATFORM
+    $env:QT_QPA_PLATFORM = 'offscreen'
+    try {
+        $smokeProcess = Start-Process -FilePath (Join-Path $projectRoot 'dist/TreeSizeExplorer/TreeSizeExplorer.exe') -ArgumentList '--self-test' -PassThru
+        if (-not $smokeProcess.WaitForExit(60000)) {
+            $smokeProcess.Kill()
+            throw 'Packaged executable smoke test timed out.'
+        }
+        if ($smokeProcess.ExitCode -ne 0) {
+            throw "Packaged executable smoke test failed ($($smokeProcess.ExitCode))."
+        }
+    } finally {
+        $env:QT_QPA_PLATFORM = $oldQtPlatform
+    }
+
     # Include Python-package licenses with the portable and installed distributions.
     $licenseScript = @'
 import importlib.metadata as metadata
@@ -65,6 +82,74 @@ for package in ('PySide6', 'PySide6_Essentials', 'PySide6_Addons', 'shiboken6', 
     }
     & $iscc "/DAppVersion=$version" "/DProjectRoot=$projectRoot" packaging/windows.iss
     if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
+
+    # A fresh hosted runner can safely exercise the real, stable installer AppId.
+    # Never perform these install/reinstall operations on a developer's machine.
+    if ($env:GITHUB_ACTIONS -eq 'true') {
+        if (-not $env:RUNNER_TEMP) { throw 'RUNNER_TEMP is required for installer smoke tests.' }
+        $smokeDirectory = Join-Path $env:RUNNER_TEMP ('TreeSize Installer Smoke ' + [guid]::NewGuid().ToString('N'))
+        $setupPath = Join-Path $projectRoot "dist/release/TreeSizeExplorer-Setup-$version.exe"
+        $installedExe = Join-Path $smokeDirectory 'TreeSizeExplorer.exe'
+        $uninstaller = Join-Path $smokeDirectory 'unins000.exe'
+        $oldInstalledQtPlatform = $env:QT_QPA_PLATFORM
+        $env:QT_QPA_PLATFORM = 'offscreen'
+        $installationSmokePassed = $false
+
+        function Invoke-InstallerSmokeProcess {
+            param([string]$Executable, [string[]]$Arguments, [string]$Label)
+            $startInfo = [Diagnostics.ProcessStartInfo]::new()
+            $startInfo.FileName = $Executable
+            $startInfo.UseShellExecute = $false
+            # ProcessStartInfo.ArgumentList quotes each Windows argument itself;
+            # no shell or manually escaped /DIR string is involved.
+            foreach ($argument in $Arguments) { $startInfo.ArgumentList.Add($argument) }
+            $process = [Diagnostics.Process]::new()
+            $process.StartInfo = $startInfo
+            try {
+                if (-not $process.Start()) { throw "$Label could not start." }
+                if (-not $process.WaitForExit(60000)) {
+                    $process.Kill($true)
+                    throw "$Label timed out after 60 seconds."
+                }
+                if ($process.ExitCode -ne 0) {
+                    throw "$Label failed ($($process.ExitCode))."
+                }
+            } finally {
+                $process.Dispose()
+            }
+        }
+
+        try {
+            foreach ($pass in 1..2) {
+                Invoke-InstallerSmokeProcess -Executable $setupPath -Arguments @(
+                    '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-',
+                    ('/DIR=' + $smokeDirectory)
+                ) -Label "Installer smoke pass $pass"
+                if (-not (Test-Path $installedExe)) { throw 'Installed executable is missing.' }
+                Invoke-InstallerSmokeProcess -Executable $installedExe -Arguments @('--self-test') -Label "Installed executable smoke pass $pass"
+            }
+            if (-not (Test-Path $uninstaller)) { throw 'Installer did not create an uninstaller.' }
+            Invoke-InstallerSmokeProcess -Executable $uninstaller -Arguments @(
+                '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+            ) -Label 'Uninstaller smoke'
+            if (Test-Path $installedExe) { throw 'Uninstaller left the installed executable behind.' }
+            $installationSmokePassed = $true
+            Write-Host 'Installer smoke passed: install, installed EXE, reinstall, installed EXE, uninstall.'
+        } finally {
+            if (-not $installationSmokePassed -and (Test-Path $uninstaller)) {
+                try {
+                    Invoke-InstallerSmokeProcess -Executable $uninstaller -Arguments @(
+                        '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+                    ) -Label 'Failed-smoke cleanup uninstall'
+                } catch {
+                    Write-Warning "Installer smoke cleanup: $($_.Exception.Message)"
+                }
+            }
+            $env:QT_QPA_PLATFORM = $oldInstalledQtPlatform
+            if (Test-Path $smokeDirectory) { Remove-Item $smokeDirectory -Recurse -Force }
+        }
+    }
+
     $portablePath = "dist/release/TreeSizeExplorer-Portable-$version-win-x64.zip"
     if (Test-Path $portablePath) { Remove-Item $portablePath }
     Compress-Archive -Path dist/TreeSizeExplorer -DestinationPath $portablePath -CompressionLevel Optimal

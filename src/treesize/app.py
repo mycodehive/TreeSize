@@ -6,7 +6,9 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -520,9 +522,48 @@ class MainWindow(QMainWindow):
             self.update_timer.stop(); self.tray.hide(); event.accept()
 
 
+def _self_test(app):
+    """Exercise the frozen executable without network access or dialogs."""
+    app.setQuitOnLastWindowClosed(False)
+    outcome = 3
+    with tempfile.TemporaryDirectory(prefix="treesize-runtime-") as directory:
+        root = Path(directory)
+        for name, size in [("large.bin", 12288), ("small.txt", 2048)]:
+            (root / name).write_bytes(b"x" * size)
+        window = MainWindow(automatic_updates=False)
+        window.show(); window.start_scan(directory)
+        deadline = time.monotonic() + 30
+        timer = QTimer(); timer.setInterval(25)
+        def inspect():
+            nonlocal outcome
+            if not window.jobs:
+                try:
+                    assert window.result is not None
+                    assert window.result.root.size == 14336
+                    assert window.result.root.files == 2
+                    root_index = window.proxy.index(0, 0)
+                    assert window.proxy.index(0, 0, root_index).data(Qt.ItemDataRole.UserRole).name == "large.bin"
+                    assert window.large_table.rowCount() == 2
+                    if os.name == "nt":
+                        # Verify frozen keyring/Windows Vault dependencies too.
+                        from .settings import _credential_backend
+                        _credential_backend()
+                    outcome = 0
+                except Exception:
+                    outcome = 2
+                timer.stop(); window.close(); app.exit(outcome)
+            elif time.monotonic() > deadline:
+                window.cancel_scan.set(); timer.stop(); app.exit(3)
+        timer.timeout.connect(inspect); timer.start()
+        app.exec()
+    return outcome
+
+
 def main():
     app = QApplication(sys.argv); app.setApplicationName(APP_NAME); app.setOrganizationName("CodeHive")
     app.setStyle("Fusion"); app.setStyleSheet(STYLE)
+    if "--self-test" in sys.argv:
+        return _self_test(app)
     mutex = None
     if os.name == "nt":
         from ctypes import wintypes
