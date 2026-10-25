@@ -30,6 +30,7 @@ class GuiTests(unittest.TestCase):
         index = model.index_for_node(a)
         persistent = QPersistentModelIndex(index)
         self.assertIs(model.parent(model.index_for_node(child)).internalPointer(), a)
+        self.assertEqual(model.index_for_node(a, 1).data(Qt.ItemDataRole.UserRole + 1), 10)
         model.sort(0, Qt.SortOrder.AscendingOrder)
         self.assertEqual(persistent.row(), 0)
         self.assertIs(model.index(persistent.row(), 0, model.index(0, 0)).internalPointer(), a)

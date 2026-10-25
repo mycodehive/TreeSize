@@ -70,6 +70,15 @@ class CheckTests(unittest.TestCase):
         self.assertIsNone(self.updater.check("1.10.0"))
         self.assertIsNone(self.updater.check("2.0.0"))
 
+    def test_repository_casing_matches_canonical_github_urls(self):
+        updater = GitHubUpdater("MYCODEHIVE/treesize")
+        updater._read = Mock(return_value=json.dumps(release_payload()).encode())
+        release = updater.check("1.0.0")
+        self.assertEqual(release.version, "1.10.0")
+        updater._opener = Mock()
+        updater._open(release.installer_url, binary=True)
+        self.assertTrue(updater._opener.open.called)
+
     def test_ignore_drafts_and_prereleases(self):
         for changes in [{"draft": True}, {"prerelease": True}, {"tag_name": "v2.0.0-beta.1"}]:
             payload = release_payload() | changes

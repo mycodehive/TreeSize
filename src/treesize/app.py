@@ -212,6 +212,7 @@ class MainWindow(QMainWindow):
         self.tree = QTreeView(); self.tree.setAlternatingRowColors(True); self.tree.setUniformRowHeights(True)
         self.tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.proxy = QSortFilterProxyModel(self); self.proxy.setRecursiveFilteringEnabled(True)
+        self.proxy.setSortRole(Qt.ItemDataRole.UserRole + 1)
         self.proxy.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive); self.proxy.setFilterKeyColumn(0)
         self.proxy.setSourceModel(self.model); self.tree.setModel(self.proxy)
         self.tree.setItemDelegate(UsageDelegate(self.tree)); self.tree.setSortingEnabled(True)
@@ -402,6 +403,9 @@ class MainWindow(QMainWindow):
         self.launch(lambda progress: exporter(result.root, name, result.cancelled), done, failed)
 
     def show_settings(self):
+        if self.download_task:
+            QMessageBox.information(self, "업데이트 다운로드 중", "다운로드가 완료된 뒤 배포 저장소 설정을 변경할 수 있습니다.")
+            return
         dialog = SettingsDialog(self.settings, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             changed = self.settings.repository != dialog.saved.repository
@@ -414,11 +418,12 @@ class MainWindow(QMainWindow):
                 self.release = None; self.banner.hide()
             self.check_updates(False)
 
-    def _updater(self):
+    def _updater(self, repository=None):
+        repository = repository or self.settings.repository
         token = ""
         if os.name == "nt":
-            token = get_token(self.settings.repository)
-        return GitHubUpdater(self.settings.repository, token)
+            token = get_token(repository)
+        return GitHubUpdater(repository, token)
 
     def check_updates(self, manual=False):
         if self.update_task or self.download_task or self.closing:
@@ -428,16 +433,19 @@ class MainWindow(QMainWindow):
         repository = self.settings.repository
         self.update_button.setEnabled(False); self.update_status.setText("업데이트 확인 중…")
         def work(progress):
-            return self._updater().check(VERSION)
+            return self._updater(repository).check(VERSION)
         def done(release):
             self.update_task = None; self.update_button.setEnabled(True)
             if repository != self.settings.repository:
-                self.update_status.setText("저장소 변경됨 · 다시 확인하세요"); return
+                self.update_status.setText("변경한 저장소를 확인합니다…")
+                QTimer.singleShot(0, lambda: self.check_updates(False))
+                return
             self.update_status.setText(f"{datetime.now():%H:%M} 확인 · " + (f"v{release.version} 사용 가능" if release else "최신 버전"))
             if release:
                 self.release = release; self.banner_label.setText(f"새 버전 v{release.version}을 사용할 수 있습니다."); self.banner.show()
-                if release.version not in self.notified_versions:
-                    self.notified_versions.add(release.version)
+                notice = (repository, release.version)
+                if notice not in self.notified_versions:
+                    self.notified_versions.add(notice)
                     self.tray.showMessage(APP_NAME, f"새 버전 v{release.version}이 있습니다. 앱에서 업데이트를 설치하세요.", QSystemTrayIcon.MessageIcon.Information, 10000)
                 if manual:
                     self.release_notes()
@@ -447,6 +455,9 @@ class MainWindow(QMainWindow):
                     QMessageBox.information(self, "업데이트", f"현재 v{VERSION}이 최신 버전입니다.")
         def failed(error):
             self.update_task = None; self.update_button.setEnabled(True)
+            if repository != self.settings.repository:
+                QTimer.singleShot(0, lambda: self.check_updates(False))
+                return
             self.update_status.setText("업데이트 확인 실패 · 설정/연결 확인"); self.update_status.setToolTip(error)
             if manual and not self.closing:
                 QMessageBox.warning(self, "업데이트를 확인할 수 없습니다", error)
@@ -466,13 +477,14 @@ class MainWindow(QMainWindow):
         if self.scan_task:
             QMessageBox.information(self, "분석 작업 진행 중", "분석이 끝나거나 중지한 뒤 업데이트를 설치하세요."); return
         release = self.release
+        repository = self.settings.repository
         answer = QMessageBox.question(self, "업데이트 다운로드", f"v{release.version} 설치 파일을 GitHub에서 내려받으시겠습니까?\n다운로드 후 SHA-256을 검증하고 설치 여부를 다시 묻습니다.")
         if answer != QMessageBox.StandardButton.Yes:
             return
         self.install_button.setEnabled(False); self.scan_button.setEnabled(False)
         self.progress_bar.setRange(0, 100); self.progress_bar.setValue(0); self.progress_bar.show()
         def work(progress):
-            return self._updater().download(release, lambda count, total: progress((count, total)))
+            return self._updater(repository).download(release, lambda count, total: progress((count, total)))
         def report(data):
             count, total = data
             self.progress_bar.setValue(int(100 * count / total) if total else 0)
@@ -480,7 +492,7 @@ class MainWindow(QMainWindow):
         def done(path):
             self.download_task = None; self.install_button.setEnabled(True); self.scan_button.setEnabled(True); self.progress_bar.hide()
             self.update_status.setText("설치 파일 SHA-256 검증 완료")
-            if self.closing:
+            if self.closing or repository != self.settings.repository:
                 return
             answer = QMessageBox.question(self, "업데이트 설치", f"v{release.version} 설치 파일 검증이 완료되었습니다.\n지금 앱을 종료하고 설치 프로그램을 실행하시겠습니까?")
             if answer == QMessageBox.StandardButton.Yes:

@@ -53,13 +53,13 @@ def _validate_url(url: str, repository: str, *, redirected: bool = False) -> Non
         raise UpdateError("안전하지 않은 업데이트 다운로드 주소입니다.")
     hostname = (parsed.hostname or "").lower()
     prefix = f"/repos/{repository}/releases/"
-    if hostname == "api.github.com" and parsed.path.startswith(prefix):
+    if hostname == "api.github.com" and parsed.path.casefold().startswith(prefix.casefold()):
         return
     if redirected:
         if hostname in {"release-assets.githubusercontent.com", "objects.githubusercontent.com",
                         "github-releases.githubusercontent.com"}:
             return
-        if hostname == "github.com" and parsed.path.startswith(f"/{repository}/releases/download/"):
+        if hostname == "github.com" and parsed.path.casefold().startswith(f"/{repository}/releases/download/".casefold()):
             return
     raise UpdateError("이 저장소의 GitHub 릴리스 주소만 사용할 수 있습니다.")
 
@@ -142,12 +142,12 @@ class GitHubUpdater:
             by_name = {asset["name"]: asset for asset in assets if isinstance(asset, dict) and "name" in asset}
             installer = str(by_name[installer_name]["url"])
             checksums = str(by_name["SHA256SUMS.txt"]["url"])
-            asset_pattern = re.compile(rf"https://api\.github\.com/repos/{re.escape(self.repository)}/releases/assets/\d+")
+            asset_pattern = re.compile(rf"https://api\.github\.com/repos/{re.escape(self.repository)}/releases/assets/\d+", re.IGNORECASE)
             if not asset_pattern.fullmatch(installer) or not asset_pattern.fullmatch(checksums):
                 raise UpdateError("릴리스의 파일 주소가 올바르지 않습니다.")
             page = str(payload.get("html_url", ""))
             parsed = urlsplit(page)
-            if parsed.scheme != "https" or parsed.netloc != "github.com" or not parsed.path.startswith(f"/{self.repository}/releases/tag/"):
+            if parsed.scheme != "https" or parsed.netloc != "github.com" or not parsed.path.casefold().startswith(f"/{self.repository}/releases/tag/".casefold()):
                 raise UpdateError("릴리스 페이지 주소가 올바르지 않습니다.")
             return Release(version, tag, str(payload.get("body") or ""), page,
                            installer_name, installer, checksums)
@@ -159,7 +159,7 @@ class GitHubUpdater:
         expected_name = f"TreeSizeExplorer-Setup-{version}.exe"
         if release.installer_name != expected_name:
             raise UpdateError("업데이트 설치 파일 이름이 올바르지 않습니다.")
-        asset_pattern = re.compile(rf"https://api\.github\.com/repos/{re.escape(self.repository)}/releases/assets/\d+")
+        asset_pattern = re.compile(rf"https://api\.github\.com/repos/{re.escape(self.repository)}/releases/assets/\d+", re.IGNORECASE)
         if not asset_pattern.fullmatch(release.installer_url) or not asset_pattern.fullmatch(release.checksums_url):
             raise UpdateError("이 저장소의 릴리스 자산만 다운로드할 수 있습니다.")
         try:

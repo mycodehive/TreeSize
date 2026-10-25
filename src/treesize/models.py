@@ -72,6 +72,10 @@ class DiskTreeModel(QAbstractItemModel):
         node, col = index.internalPointer(), index.column()
         if role == Qt.ItemDataRole.UserRole:
             return node
+        if role == Qt.ItemDataRole.UserRole + 1:
+            ratio = node.size / node.parent.size if node.parent and node.parent.size else (1 if node.size else 0)
+            return [node.name.casefold(), node.size, node.allocated, ratio,
+                    node.files, node.folders, node.modified][col]
         if role == Qt.ItemDataRole.ToolTipRole:
             return node.path + ("\n" + node.error if node.error else "") + ("\n건너뛴 항목" if node.skipped else "")
         if role == Qt.ItemDataRole.ForegroundRole and (node.error or node.skipped):

@@ -35,6 +35,8 @@ def main():
         assert window.result.root.files == 2
         assert window.large_table.rowCount() == 2
         assert window.extension_table.rowCount() == 2
+        root_index = window.proxy.index(0, 0)
+        assert window.proxy.index(0, 0, root_index).data(Qt.ItemDataRole.UserRole).name == "Video", "Sizes must sort numerically, not as text"
         window.select_node(window.result.root.children[0])
         assert window.selected.name in {"Documents", "Video"}
         window.tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)

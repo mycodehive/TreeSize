@@ -8,8 +8,8 @@ TreeSize의 공개 기능을 참고해 새로 작성한 독립 프로그램이�
 
 **[최신 Windows 설치 파일과 휴대용 ZIP](https://github.com/mycodehive/TreeSize/releases/latest)**
 
-- 설치: `TreeSizeExplorer-Setup-1.0.0.exe` 실행. Python을 별도로 설치할 필요가 없습니다.
-- 휴대용: `TreeSizeExplorer-Portable-1.0.0-win-x64.zip` 전체를 압축 해제하고 폴더 안의 `TreeSizeExplorer.exe` 실행.
+- 설치: `TreeSizeExplorer-Setup-1.0.1.exe` 실행. Python을 별도로 설치할 필요가 없습니다.
+- 휴대용: `TreeSizeExplorer-Portable-1.0.1-win-x64.zip` 전체를 압축 해제하고 폴더 안의 `TreeSizeExplorer.exe` 실행.
 - 저장소가 비공개인 경우 GitHub 계정에 로그인해야 다운로드할 수 있습니다.
 - 첫 소스 반영 후 **[Actions](https://github.com/mycodehive/TreeSize/actions)** 빌드가 성공해야 Releases에 설치 파일이 나타납니다.
 
